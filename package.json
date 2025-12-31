@@ -1,0 +1,20 @@
+{
+  "name": "scribeloop",
+  "version": "1.0.0",
+  "description": "Plateforme de feedback collaboratif pour auteurs",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["feedback", "writing", "collaboration", "annotations"],
+  "author": "néné",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "better-sqlite3": "^12.5.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "markdown-it": "^14.1.0"
+  }
+}

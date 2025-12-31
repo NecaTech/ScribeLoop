@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="ScribeLoop - Plateforme de feedback collaboratif pour auteurs">
+    <title>ScribeLoop</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Merriweather:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/reader.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Landing Page (Default View) -->
+        <section id="landing" class="view active">
+            <div class="landing-card">
+                <h1 class="logo">ScribeLoop</h1>
+                <p class="tagline">Votre cercle de confiance pour affiner votre manuscrit</p>
+                
+                <form id="pseudo-form">
+                    <input 
+                        type="text" 
+                        id="pseudo-input" 
+                        placeholder="Entrez votre pseudo..." 
+                        autocomplete="off"
+                        minlength="3"
+                        required
+                    >
+                    <button type="submit" id="start-btn" disabled>
+                        Commencer à lire
+                    </button>
+                </form>
+            </div>
+        </section>
+        
+        <!-- Dashboard View -->
+        <section id="dashboard" class="view">
+            <header class="dashboard-header">
+                <h1 id="book-title">Chargement...</h1>
+                <p class="greeting">Bonjour, <span id="user-pseudo"></span></p>
+                
+                <!-- Progress Bar -->
+                <div id="progress-container" class="progress-container">
+                    <div class="progress-track">
+                        <div id="progress-bar" class="progress-bar"></div>
+                    </div>
+                    <span id="progress-text" class="progress-text">0/0 chapitres publiés</span>
+                </div>
+            </header>
+            
+            <div class="chapter-groups">
+                <div class="chapter-group">
+                    <h2>🟢 En attente de feedback</h2>
+                    <ul id="chapters-awaiting" class="chapter-list"></ul>
+                </div>
+                
+                <div class="chapter-group">
+                    <h2>🔒 Validés</h2>
+                    <ul id="chapters-validated" class="chapter-list"></ul>
+                </div>
+                
+                <div class="chapter-group">
+                    <h2>📝 Prévus</h2>
+                    <ul id="chapters-planned" class="chapter-list"></ul>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Reading View -->
+        <section id="reader" class="view">
+            <nav class="reader-nav">
+                <button id="back-btn" class="nav-btn">← Retour</button>
+                <span id="chapter-title-nav"></span>
+            </nav>
+            
+            <article id="chapter-content" class="manuscript">
+                <!-- Rendered markdown content goes here -->
+            </article>
+            
+            <!-- Annotation Sidebar -->
+            <aside id="annotation-sidebar" class="sidebar hidden">
+                <div class="sidebar-header">
+                    <h3>Annotations</h3>
+                    <button id="close-sidebar" class="close-btn">×</button>
+                </div>
+                <div id="selected-text-quote" class="quote"></div>
+                <div id="annotation-thread" class="thread"></div>
+                <form id="annotation-form">
+                    <textarea id="comment-input" placeholder="Votre commentaire..." required></textarea>
+                    <button type="submit" class="btn-primary">Poster</button>
+                </form>
+            </aside>
+        </section>
+        
+        <!-- Admin Console -->
+        <section id="admin" class="view">
+            <header class="admin-header">
+                <h1>🔐 Console Admin</h1>
+                <button id="admin-logout" class="nav-btn">Déconnexion</button>
+            </header>
+            
+            <!-- Metadata Settings -->
+            <div class="admin-section">
+                <h2>⚙️ Paramètres du projet</h2>
+                <form id="metadata-form" class="admin-form">
+                    <div class="form-group">
+                        <label for="meta-title">Titre du livre</label>
+                        <input type="text" id="meta-title" placeholder="Mon Manuscrit" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="meta-chapters">Nombre de chapitres prévus</label>
+                        <input type="number" id="meta-chapters" min="1" value="10" required>
+                    </div>
+                    <button type="submit" class="btn-primary">Sauvegarder</button>
+                </form>
+            </div>
+            
+            <!-- Chapter Creation -->
+            <div class="admin-section">
+                <h2>📝 Nouveau chapitre</h2>
+                <form id="chapter-form" class="admin-form">
+                    <div class="form-group">
+                        <label for="chapter-title">Titre du chapitre</label>
+                        <input type="text" id="admin-chapter-title" placeholder="Chapitre 1 : Le commencement" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="chapter-content">Contenu (Markdown)</label>
+                        <textarea id="admin-chapter-content" rows="12" placeholder="# Mon chapitre
+
+Écrivez votre texte en **Markdown**...
+
+*Italique*, **gras**, etc." required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="chapter-status">Statut</label>
+                        <select id="admin-chapter-status">
+                            <option value="planned">📝 Prévu (non visible)</option>
+                            <option value="awaiting_feedback">🟢 En attente de feedback</option>
+                            <option value="validated">🔒 Validé</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn-primary">Créer le chapitre</button>
+                        <button type="button" id="cancel-edit" class="btn-secondary hidden">Annuler</button>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Chapter List -->
+            <div class="admin-section">
+                <h2>📚 Chapitres existants</h2>
+                <ul id="admin-chapter-list" class="admin-list"></ul>
+            </div>
+        </section>
+    </div>
+    
+    <!-- Context Menu (for annotations) -->
+    <div id="context-menu" class="context-menu hidden">
+        <button id="annotate-btn">💬 Annoter</button>
+    </div>
+    
+    <!-- Mobile FAB (Floating Action Button) -->
+    <button id="mobile-fab" class="fab hidden">🖋️</button>
+    
+    <!-- Scripts (ES Modules) -->
+    <script type="module" src="/js/app.js"></script>
+</body>
+</html>
