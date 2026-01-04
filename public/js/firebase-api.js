@@ -4,7 +4,7 @@
  */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getFirestore, collection, doc, getDocs, getDoc, addDoc, updateDoc, query, where, orderBy, serverTimestamp, deleteDoc, writeBatch, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, collection, doc, getDocs, getDoc, addDoc, updateDoc, setDoc, query, where, orderBy, serverTimestamp, deleteDoc, writeBatch, limit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 // Firebase configuration
 const firebaseConfig = {
@@ -233,6 +233,88 @@ export const annotations = {
             created_at: serverTimestamp()
         });
         return { id: docRef.id, message: 'Reply created' };
+    },
+
+    /**
+     * Delete an annotation (and its replies)
+     */
+    async delete(annotationId, userPseudo, adminToken) {
+        // Get the annotation first
+        const docRef = doc(db, 'annotations', annotationId);
+        const docSnap = await getDoc(docRef);
+        
+        if (!docSnap.exists()) {
+            throw new Error('Annotation not found');
+        }
+        
+        const annotation = docSnap.data();
+        const isAdmin = verifyAdmin(adminToken);
+        
+        // Permission check: Must be author OR admin
+        if (annotation.pseudo !== userPseudo && !isAdmin) {
+            throw new Error('Unauthorized: You can only delete your own comments');
+        }
+        
+        // Batch delete (cascade logic)
+        const batch = writeBatch(db);
+        batch.delete(docRef);
+        
+        // Find and delete all direct replies (simple 1-level cascade for now as per app structure)
+        // If nested structure is deeper, this needs recursion, but current app uses flat list with parent_id
+        // which builds a tree. We need to find ALL children recursively.
+        
+        // Helper to find all descendants
+        const getAllDescendants = async (parentId) => {
+            const annotationsRef = collection(db, 'annotations');
+            const q = query(annotationsRef, where('parent_id', '==', parentId));
+            const snapshot = await getDocs(q);
+            
+            const checks = [];
+            snapshot.docs.forEach(childDoc => {
+                batch.delete(childDoc.ref);
+                checks.push(getAllDescendants(childDoc.id));
+            });
+            
+            await Promise.all(checks);
+        };
+        
+        await getAllDescendants(annotationId);
+        
+        await batch.commit();
+        return { message: 'Annotation deleted' };
+    }
+};
+
+// ==================== USERS ====================
+
+export const users = {
+    /**
+     * Terme générique pour login ou registration
+     * Si l'utilisateur n'existe pas, il est créé au premier login.
+     */
+    async login(pseudo, password) {
+        if (!pseudo || !password) throw new Error('Pseudo et mot de passe requis');
+        
+        const id = pseudo.toLowerCase().trim();
+        const userRef = doc(db, 'users', id);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists()) {
+            const userData = userSnap.data();
+            if (userData.password === password) {
+                return { pseudo: userData.pseudo };
+            } else {
+                throw new Error('Ce pseudo est déjà utilisé avec un autre mot de passe.');
+            }
+        } else {
+            // Création automatique au premier login pour simplifier
+            await setDoc(userRef, {
+                pseudo: pseudo.trim(),
+                password: password,
+                created_at: serverTimestamp()
+            });
+            return { pseudo: pseudo.trim(), isNew: true };
+        }
     }
 };
 
@@ -278,4 +360,4 @@ export const metadata = {
     }
 };
 
-export default { chapters, annotations, metadata, verifyAdmin };
+export default { chapters, annotations, users, metadata, verifyAdmin };

@@ -14,8 +14,14 @@ service cloud.firestore {
       allow write: if true; // Admin check done in firebase-api.js
     }
     
-    // Annotations - readable and writable by all (pseudo-based, no auth)
+    // Annotations - readable and writable by all
     match /annotations/{annotationId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    
+    // Users - readable and writable by all
+    match /users/{userId} {
       allow read: if true;
       allow write: if true;
     }

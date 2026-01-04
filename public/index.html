@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
     <meta name="description" content="ScribeLoop - Plateforme de feedback collaboratif pour auteurs">
     <title>ScribeLoop</title>
     
@@ -27,13 +27,20 @@
                     <input 
                         type="text" 
                         id="pseudo-input" 
-                        placeholder="Entrez votre pseudo..." 
+                        placeholder="Votre pseudo..." 
                         autocomplete="off"
                         minlength="3"
                         required
                     >
+                    <input 
+                        type="password" 
+                        id="password-input" 
+                        placeholder="Mot de passe..." 
+                        required
+                    >
+                    <div id="auth-hint" class="auth-hint">Si c'est votre première fois, ce mot de passe sera le vôtre.</div>
                     <button type="submit" id="start-btn" disabled>
-                        Commencer à lire
+                        Se connecter / S'inscrire
                     </button>
                 </form>
             </div>
@@ -42,8 +49,13 @@
         <!-- Dashboard View -->
         <section id="dashboard" class="view">
             <header class="dashboard-header">
-                <h1 id="book-title">Chargement...</h1>
-                <p class="greeting">Bonjour, <span id="user-pseudo"></span></p>
+                <div class="header-main">
+                    <div>
+                        <h1 id="book-title">Chargement...</h1>
+                        <p class="greeting">Bonjour, <span id="user-pseudo"></span></p>
+                    </div>
+                    <button id="logout-btn" class="nav-btn">Déconnexion</button>
+                </div>
                 
                 <!-- Progress Bar -->
                 <div id="progress-container" class="progress-container">

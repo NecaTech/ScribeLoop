@@ -3,7 +3,7 @@
  * Router logic and view management
  */
 
-import { chapters, annotations, metadata, verifyAdmin } from './firebase-api.js';
+import { chapters, annotations, users, metadata, verifyAdmin } from './firebase-api.js';
 import { loadChapter, loadAnnotations } from './reader.js';
 import annotator, { applyHighlights } from './annotator.js';
 
@@ -18,6 +18,7 @@ const views = {
 const elements = {
     pseudoForm: document.getElementById('pseudo-form'),
     pseudoInput: document.getElementById('pseudo-input'),
+    passwordInput: document.getElementById('password-input'),
     startBtn: document.getElementById('start-btn'),
     userPseudo: document.getElementById('user-pseudo'),
     bookTitle: document.getElementById('book-title'),
@@ -33,6 +34,7 @@ const elements = {
     annotationThread: document.getElementById('annotation-thread'),
     annotationForm: document.getElementById('annotation-form'),
     commentInput: document.getElementById('comment-input'),
+    logoutBtn: document.getElementById('logout-btn'),
 };
 
 // State
@@ -83,21 +85,38 @@ function handleHashChange() {
  * Setup event listeners
  */
 function setupEventListeners() {
-    // Pseudo input validation
-    elements.pseudoInput?.addEventListener('input', () => {
-        const valid = elements.pseudoInput.value.trim().length >= 3;
-        elements.startBtn.disabled = !valid;
-    });
+    // Pseudo & Password input validation
+    const validateForm = () => {
+        const pseudoValid = elements.pseudoInput.value.trim().length >= 3;
+        const passwordValid = elements.passwordInput.value.length >= 4; // Minimum 4 pour le MVP
+        elements.startBtn.disabled = !(pseudoValid && passwordValid);
+    };
+    elements.pseudoInput?.addEventListener('input', validateForm);
+    elements.passwordInput?.addEventListener('input', validateForm);
     
-    // Pseudo form submission
-    elements.pseudoForm?.addEventListener('submit', (e) => {
+    // Pseudo form submission (Login / Register)
+    elements.pseudoForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const pseudo = elements.pseudoInput.value.trim();
-        if (pseudo.length >= 3) {
-            currentPseudo = pseudo;
-            localStorage.setItem('scribeloop_pseudo', pseudo);
+        const password = elements.passwordInput.value;
+        
+        const originalBtnText = elements.startBtn.textContent;
+        elements.startBtn.disabled = true;
+        elements.startBtn.textContent = 'Connexion...';
+
+        try {
+            const result = await users.login(pseudo, password);
+            
+            currentPseudo = result.pseudo;
+            localStorage.setItem('scribeloop_pseudo', currentPseudo);
+            
             showView('dashboard');
             loadDashboard();
+        } catch (error) {
+            alert('❌ ' + error.message);
+            elements.passwordInput.value = '';
+            elements.startBtn.textContent = originalBtnText;
+            elements.startBtn.disabled = false;
         }
     });
     
@@ -114,6 +133,18 @@ function setupEventListeners() {
     
     // Annotation form
     elements.annotationForm?.addEventListener('submit', handleAnnotationSubmit);
+
+    // Annotation actions (delegation)
+    elements.annotationThread?.addEventListener('click', handleAnnotationAction);
+
+    // Logout button
+    elements.logoutBtn?.addEventListener('click', () => {
+        currentPseudo = '';
+        localStorage.removeItem('scribeloop_pseudo');
+        showView('landing');
+        elements.pseudoForm.reset();
+        elements.passwordInput.value = '';
+    });
 }
 
 /**
@@ -140,6 +171,16 @@ async function loadDashboard() {
         
         // Load chapters
         const chapterList = await chapters.list();
+        
+        // Dynamic count of published chapters (validated + awaiting_feedback)
+        const publishedCount = chapterList.filter(c => 
+            c.status === 'validated' || c.status === 'awaiting_feedback'
+        ).length;
+        
+        meta.published_chapters = publishedCount;
+        
+        // Update progress bar
+        updateProgressBar(meta);
         
         // Clear lists
         elements.chaptersAwaiting.innerHTML = '';
@@ -360,9 +401,11 @@ function renderAnnotationThread(thread, rootAnnotation) {
             <div class="comment-header">
                 <span class="comment-author">${rootAnnotation.pseudo || 'Anonyme'}</span>
                 <span class="comment-date">${formatDate(rootAnnotation.created_at)}</span>
+                ${(rootAnnotation.pseudo === currentPseudo || adminToken) ? 
+                    `<button class="btn-icon-small delete-btn" data-action="delete" data-id="${rootAnnotation.id}" title="Supprimer">🗑️</button>` : ''}
             </div>
             <div class="comment-body">${escapeHtml(rootAnnotation.comment)}</div>
-            <button class="comment-reply-btn" onclick="window.replyToAnnotation('${rootAnnotation.id}')">↩ Répondre</button>
+            <button class="comment-reply-btn" data-action="reply" data-id="${rootAnnotation.id}">↩ Répondre</button>
         </div>
     `;
     
@@ -387,9 +430,11 @@ function renderReplies(replies, depth = 1) {
                 <div class="comment-header">
                     <span class="comment-author">${reply.pseudo || 'Anonyme'}</span>
                     <span class="comment-date">${formatDate(reply.created_at)}</span>
+                    ${(reply.pseudo === currentPseudo || adminToken) ? 
+                        `<button class="btn-icon-small delete-btn" data-action="delete" data-id="${reply.id}" title="Supprimer">🗑️</button>` : ''}
                 </div>
                 <div class="comment-body">${escapeHtml(reply.comment)}</div>
-                <button class="comment-reply-btn" onclick="window.replyToAnnotation('${reply.id}')">↩ Répondre</button>
+                <button class="comment-reply-btn" data-action="reply" data-id="${reply.id}">↩ Répondre</button>
             </div>
         `;
         if (reply.replies && reply.replies.length > 0) {
@@ -402,7 +447,27 @@ function renderReplies(replies, depth = 1) {
 /**
  * Setup reply to a specific annotation
  */
-window.replyToAnnotation = function(annotationId) {
+/**
+ * Handle annotation actions (Delegation)
+ */
+function handleAnnotationAction(e) {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    
+    const action = btn.dataset.action;
+    const id = btn.dataset.id;
+    
+    if (action === 'reply') {
+        replyToAnnotation(id);
+    } else if (action === 'delete') {
+        deleteAnnotation(id);
+    }
+}
+
+/**
+ * Setup reply to a specific annotation
+ */
+async function replyToAnnotation(annotationId) {
     // Set parent ID for reply
     elements.annotationForm.dataset.parentId = annotationId;
     elements.annotationForm.dataset.startOffset = '';
@@ -417,7 +482,28 @@ window.replyToAnnotation = function(annotationId) {
     // Highlight the comment being replied to
     document.querySelectorAll('.comment.replying').forEach(el => el.classList.remove('replying'));
     document.querySelector(`.comment[data-id="${annotationId}"]`)?.classList.add('replying');
-};
+}
+
+/**
+ * Delete an annotation
+ */
+async function deleteAnnotation(annotationId) {
+    if (!confirm('Voulez-vous vraiment supprimer ce commentaire ?')) {
+        return;
+    }
+    
+    try {
+        await annotations.delete(annotationId, currentPseudo, adminToken);
+        
+        // Refresh
+        await openChapter(currentChapterId);
+        closeSidebar();
+        
+    } catch (error) {
+        console.error('Error deleting annotation:', error);
+        alert('❌ Erreur: ' + error.message);
+    }
+}
 
 /**
  * Format date for display
@@ -491,15 +577,16 @@ async function handleAnnotationSubmit(e) {
     submitBtn.disabled = true;
 
     try {
+        let result;
         if (form.dataset.parentId) {
             // Reply to existing annotation
-            await annotations.reply(form.dataset.parentId, {
+            result = await annotations.reply(form.dataset.parentId, {
                 pseudo: currentPseudo || 'Anonyme',
                 comment,
             });
         } else {
             // New annotation
-            await annotations.create(currentChapterId, data);
+            result = await annotations.create(currentChapterId, data);
         }
 
         // Success feedback
@@ -509,10 +596,28 @@ async function handleAnnotationSubmit(e) {
             submitBtn.disabled = false;
         }, 1000);
 
-        // Reload chapter and annotations
-        await openChapter(currentChapterId);
-        closeSidebar();
+        // Store context ID to restore view
+        const createdId = result.id;
+        const parentId = form.dataset.parentId;
 
+        // Reload chapter and annotations (to get fresh data)
+        await openChapter(currentChapterId);
+        
+        // Restore context (keep sidebar open and show thread)
+        if (parentId) {
+            // We posted a reply, so we want to see the parent thread again
+            const parentAnnotation = currentAnnotations.find(a => a.id === parentId);
+            if (parentAnnotation) {
+                handleHighlightClick(parentAnnotation);
+            }
+        } else {
+            // We posted a new root annotation
+            const newAnnotation = currentAnnotations.find(a => a.id === createdId);
+            if (newAnnotation) {
+                handleHighlightClick(newAnnotation);
+            }
+        }
+        
     } catch (error) {
         console.error('Error submitting annotation:', error);
         submitBtn.textContent = 'Erreur !';

@@ -159,8 +159,15 @@ body {
 
 .tagline {
     color: var(--color-text-muted);
-    margin-bottom: var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
     font-size: 0.95rem;
+}
+
+.auth-hint {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    margin-bottom: var(--spacing-xs);
+    font-style: italic;
 }
 
 #pseudo-form {
@@ -169,7 +176,7 @@ body {
     gap: var(--spacing-md);
 }
 
-#pseudo-input {
+#pseudo-input, #password-input {
     font-family: var(--font-sans);
     font-size: 1rem;
     padding: var(--spacing-md) var(--spacing-lg);
@@ -179,7 +186,7 @@ body {
     transition: border-color var(--transition-fast);
 }
 
-#pseudo-input:focus {
+#pseudo-input:focus, #password-input:focus {
     border-color: var(--color-primary);
 }
 
@@ -218,6 +225,12 @@ body {
     margin-bottom: var(--spacing-2xl);
     padding-bottom: var(--spacing-lg);
     border-bottom: 1px solid var(--color-border);
+}
+
+.header-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
 }
 
 .dashboard-header h1 {
