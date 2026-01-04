@@ -2,61 +2,75 @@
 
 Plateforme de feedback collaboratif pour auteurs. Permet à un cercle de confiance de lecteurs de laisser des annotations contextuelles directement sur le manuscrit.
 
+## 🌐 Production
+
+**URL** : [https://scribeloop.web.app](https://scribeloop.web.app)
+
 ## Stack Technique
 
-- **Runtime**: Node.js (LTS v18+)
-- **Framework**: Express.js
-- **Database**: SQLite (via better-sqlite3)
-- **Frontend**: Vanilla JavaScript (ES Modules)
-- **Markdown**: markdown-it
+- **Hébergement** : Firebase Hosting (gratuit)
+- **Base de données** : Cloud Firestore (NoSQL)
+- **Frontend** : Vanilla JavaScript (ES Modules)
+- **Markdown** : markdown-it (CDN)
 
-## Installation
+## Installation locale
 
 ```bash
-npm install
+# Servir les fichiers statiques
+npx serve public -l 3000
 ```
+
+L'app se connecte à Firestore en production, donc les données sont partagées.
 
 ## Configuration
 
-Créer un fichier `.env` à la racine (déjà inclus par défaut) :
+Les credentials Firebase sont dans `public/js/firebase-api.js`.
 
-```
-PORT=3000
-ADMIN_SECRET=dev_secret_change_me
-```
+Le mot de passe admin est défini dans le même fichier (variable `ADMIN_SECRET`).
 
-## Lancement
+## Déploiement
 
 ```bash
-npm start
-```
+# Connexion (une seule fois)
+firebase login
 
-Le serveur démarre sur `http://localhost:3000`
+# Déployer
+firebase deploy
+```
 
 ## Structure du Projet
 
 ```
 scribeloop/
-├── database/           # Base SQLite (créée automatiquement)
-├── public/             # Assets statiques
+├── public/             # Assets statiques (hébergés sur Firebase)
 │   ├── css/           # Styles
 │   ├── js/            # Modules JavaScript
-│   └── icons/         # Icônes SVG
-├── src/
-│   ├── app.js         # Serveur Express
-│   ├── database.js    # Connexion SQLite & Schéma
-│   └── routes/        # Routes API
-└── .env               # Variables d'environnement
+│   │   ├── app.js           # Point d'entrée principal
+│   │   ├── firebase-api.js  # SDK Firestore
+│   │   ├── reader.js        # Rendu des chapitres
+│   │   └── annotator.js     # Moteur d'annotation
+│   └── index.html     # SPA unique
+├── firebase.json      # Configuration Firebase Hosting
+├── firestore.rules    # Règles de sécurité Firestore
+└── .firebaserc        # Projet Firebase lié
 ```
 
-## API
+## Collections Firestore
 
-### Chapters
-- `GET /api/chapters` - Liste des chapitres
-- `GET /api/chapters/:id` - Détail d'un chapitre
-- `POST /api/chapters` - Créer un chapitre (Admin)
+| Collection | Description |
+|------------|-------------|
+| `metadata` | Paramètres du projet (titre, chapitres prévus) |
+| `chapters` | Chapitres avec contenu Markdown |
+| `annotations` | Annotations et réponses des lecteurs |
 
-### Annotations
-- `GET /api/chapters/:id/annotations` - Annotations d'un chapitre
-- `POST /api/chapters/:id/annotations` - Nouvelle annotation
-- `POST /api/annotations/:id/reply` - Répondre à une annotation
+## Admin
+
+- Accès : `https://scribeloop.web.app/#admin`
+- Mot de passe : configuré dans `firebase-api.js`
+
+## Documentation
+
+- [prd.md](./prd.md) - Product Requirements
+- [architecture.md](./architecture.md) - Architecture technique
+- [user_story.md](./user_story.md) - User Stories
+- [ux-design.md](./ux-design.md) - Spécifications UX/UI

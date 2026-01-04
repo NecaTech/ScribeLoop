@@ -1,184 +1,158 @@
 Technical Architecture - ScribeLoop
 
-Version: 2.0 (Final)
+Version: 3.0 (Firebase)
 Architect: Winston
-Status: Approved for Development
-Target: Full-Stack Developer (Phase 4)
+Status: Production
+Target: Full-Stack Developer
 
-1. High-Level Overview
+## 1. High-Level Overview
 
-ScribeLoop is a minimalist, collaborative feedback platform for authors. The system is designed to be self-hosted or run locally with zero external dependencies beyond the Node.js runtime.
+ScribeLoop is a minimalist, collaborative feedback platform for authors. The system is deployed as a serverless application using Firebase.
 
-Core Philosophy: "Boring Technology". Stability over novelty.
-Immutability Rule: Once a chapter is in "Awaiting Feedback", its text content is locked to ensure annotation offsets remain valid.
+**Core Philosophy**: "Boring Technology". Stability over novelty.
+**Immutability Rule**: Once a chapter is in "Awaiting Feedback", its text content is locked to ensure annotation offsets remain valid.
 
-The Stack (Frozen)
+### The Stack
 
-Runtime: Node.js (LTS v18+)
+| Component | Technology |
+|-----------|------------|
+| Hosting | Firebase Hosting (CDN) |
+| Database | Cloud Firestore (NoSQL) |
+| Frontend | Vanilla JavaScript (ES Modules) |
+| Styling | CSS Variables (Native) |
+| Markdown | markdown-it (CDN) |
 
-Framework: Express.js (chosen for ubiquity and simplicity)
+## 2. File System Structure
 
-Database: SQLite (via better-sqlite3 driver)
-
-Frontend: Vanilla JavaScript (ES Modules). No build step (Webpack/Vite) required.
-
-Styling: CSS Variables (Native).
-
-Markdown Engine: markdown-it.
-
-2. File System Structure
-
-The developer must initialize the project using exactly this structure to ensure separation of concerns.
-
+```
 scribeloop/
-├── database/
-│   └── scribeloop.sqlite     # Created automatically on startup
-├── public/                   # Static Assets (served by Express)
+├── public/                   # Static Assets (served by Firebase)
 │   ├── css/
 │   │   ├── style.css         # Global styles & Typography
 │   │   └── reader.css        # Specific styles for the reading view
 │   ├── js/
 │   │   ├── app.js            # Main entry point (router logic)
-│   │   ├── api.js            # Fetch wrapper for backend communication
+│   │   ├── firebase-api.js   # Firestore SDK integration
 │   │   ├── reader.js         # Chapter rendering logic
-│   │   └── annotator.js      # Selection & Highlighting logic (The core complexity)
-│   └── icons/                # SVG icons
-├── src/
-│   ├── app.js                # Express App setup
-│   ├── database.js           # SQLite connection & Schema initialization
-│   └── routes/
-│       ├── chapters.js       # CRUD for chapters
-│       └── annotations.js    # CRUD for comments
-├── .env                      # Environment variables (PORT, ADMIN_SECRET)
-├── package.json
+│   │   └── annotator.js      # Selection & Highlighting logic
+│   └── index.html            # Single Page Application
+├── firebase.json             # Firebase Hosting configuration
+├── firestore.rules           # Firestore security rules
+├── .firebaserc               # Firebase project link
 └── README.md
+```
 
+## 3. Database Schema (Firestore)
 
-3. Database Schema (SQLite)
+### 3.1. Collections
 
-We use better-sqlite3 for synchronous, crash-safe operations.
+#### `metadata` (document: "project")
+```json
+{
+  "book_title": "Mon Manuscrit",
+  "total_chapters": 10
+}
+```
 
-3.1. Initialization SQL
+#### `chapters` (documents: auto-generated IDs)
+```json
+{
+  "title": "Chapter Title",
+  "content_md": "# Markdown content...",
+  "status": "planned | awaiting_feedback | validated",
+  "sort_order": 1,
+  "created_at": Timestamp
+}
+```
 
-This script must run on server startup (src/database.js) if the file does not exist.
+#### `annotations` (documents: auto-generated IDs)
+```json
+{
+  "chapter_id": "abc123",
+  "parent_id": null,
+  "pseudo": "LecteurX",
+  "comment": "Great passage!",
+  "quote": "selected text",
+  "start_offset": 150,
+  "end_offset": 175,
+  "created_at": Timestamp
+}
+```
 
--- 1. Metadata (Project Settings)
-CREATE TABLE IF NOT EXISTS metadata (
-    key TEXT PRIMARY KEY,
-    value TEXT
-);
+## 4. API (Firestore SDK)
 
--- 2. Chapters
-CREATE TABLE IF NOT EXISTS chapters (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    content_md TEXT NOT NULL,
-    status TEXT CHECK(status IN ('planned', 'awaiting_feedback', 'validated')) DEFAULT 'planned',
-    sort_order INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+All API calls are made directly from the browser using the Firestore JavaScript SDK.
 
--- 3. Annotations
-CREATE TABLE IF NOT EXISTS annotations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chapter_id INTEGER NOT NULL,
-    parent_id INTEGER DEFAULT NULL,   -- If NULL, it's a root comment. If set, it's a reply.
-    pseudo TEXT NOT NULL,
-    comment TEXT NOT NULL,
-    selected_text TEXT,               -- Context for fallback
-    start_offset INTEGER,             -- Absolute character index in the rendered text
-    end_offset INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(chapter_id) REFERENCES chapters(id),
-    FOREIGN KEY(parent_id) REFERENCES annotations(id) ON DELETE CASCADE
-);
+### 4.1. Chapters
 
--- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_chapters_order ON chapters(sort_order);
-CREATE INDEX IF NOT EXISTS idx_annotations_chapter ON annotations(chapter_id);
+| Method | Description |
+|--------|-------------|
+| `chapters.list()` | Returns list of all chapters |
+| `chapters.get(id)` | Returns single chapter |
+| `chapters.create(data, adminToken)` | Create chapter (admin only) |
+| `chapters.update(id, data, adminToken)` | Update chapter (admin only) |
 
+### 4.2. Annotations
 
-4. API Contract (REST)
+| Method | Description |
+|--------|-------------|
+| `annotations.list(chapterId)` | Returns annotations for a chapter |
+| `annotations.create(chapterId, data)` | Create new annotation |
+| `annotations.reply(annotationId, data)` | Reply to annotation |
 
-All responses must be JSON. Errors must return standard HTTP codes (400, 404, 500).
+## 5. The Annotation Engine (Frontend Logic)
 
-4.1. Chapters
+### 5.1. The "Offset" Strategy
 
-GET /api/chapters: Returns list of chapters (id, title, status).
+We treat the entire chapter text as a single linear string for calculation purposes.
 
-GET /api/chapters/:id: Returns full content + HTML rendered server-side (optional) or Markdown.
+1. **Selection**: User selects text.
+2. **Calculation**: `annotator.js` calculates the absolute offset relative to `#chapter-content`.
+3. **Storage**: Send `start_offset` and `end_offset` to Firestore.
+4. **Re-hydration**: Load annotations → Sort by offset → Insert `<span class="highlight">` tags.
 
-POST /api/chapters (Admin): Create/Update chapter content.
+### 5.2. Mobile Interactions
 
-4.2. Annotations
+- Listen for `selectionchange`
+- If text is selected on touch device, wait 500ms
+- Display custom "Annotate" floating button
 
-GET /api/chapters/:id/annotations: Returns nested tree of comments.
+## 6. Security
 
-POST /api/chapters/:id/annotations:
+### 6.1. Authentication Model
 
-Payload: { pseudo, comment, start_offset, end_offset, selected_text }
+| Role | Method |
+|------|--------|
+| Readers | No auth, pseudo stored in localStorage |
+| Admin | Client-side token verification (MVP) |
 
-Logic: Validate that start_offset and end_offset are within bounds.
+### 6.2. Firestore Rules
 
-POST /api/annotations/:id/reply:
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read: if true;
+      allow write: if true; // MVP: open, admin check in app
+    }
+  }
+}
+```
 
-Payload: { pseudo, comment }
+> **Note**: For production beyond MVP, implement Firebase Authentication.
 
-5. The Annotation Engine (Frontend Logic)
+## 7. Deployment
 
-This is the most critical technical component. It handles the "Selection" to "Storage" mapping.
+```bash
+# One-time login
+firebase login
 
-5.1. The "Offset" Strategy
+# Deploy hosting + rules
+firebase deploy
+```
 
-We cannot rely on DOM Node logic (e.g., "Paragraph 3, childNode 2") because it is brittle.
-Strategy: We treat the entire chapter text as a single linear string for calculation purposes.
+### URLs
 
-Selection: User selects text.
-
-Calculation: annotator.js calculates the absolute offset of the selection relative to the root container (#chapter-content).
-
-Note: We must normalize line breaks to ensure consistency between Browsers.
-
-Storage: Send start_offset (int) and end_offset (int) to DB.
-
-Re-hydration (Rendering):
-
-Load Chapter text.
-
-Load Annotations.
-
-Sort annotations by start_offset.
-
-Insert <span class="highlight" data-id="123"> tags into the HTML at the specific indices.
-
-5.2. Mobile Interactions (Touch)
-
-To satisfy the Mobile User Story:
-
-Listen for selectionchange.
-
-If text is selected on a touch device, wait 500ms.
-
-If selection persists, display a custom "Annotate" floating button near the selection (using window.getSelection().getRangeAt(0).getBoundingClientRect()).
-
-This bypasses the need to override the native context menu aggressively.
-
-6. Security & Admin
-
-Authentication: Minimalist.
-
-Readers: No Auth. Just provide a pseudo (stored in localStorage).
-
-Admin: A simple x-admin-token header required for POST /api/chapters. The token is set in .env.
-
-7. Development Roadmap (Phase 4)
-
-Setup: npm init, install express better-sqlite3 markdown-it.
-
-Backend Core: Setup SQLite and basic Routes.
-
-Frontend Reader: Fetch Markdown, render HTML.
-
-Annotation Logic: Implement the selection calculator (The hardest part, do this carefully).
-
-UI Polish: CSS Variables for typography and spacing.
+- **Production**: https://scribeloop.web.app
+- **Admin Console**: https://scribeloop.web.app/#admin

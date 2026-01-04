@@ -1,121 +1,103 @@
 Product Requirements Document (PRD) - ScribeLoop
 
-Version: 1.3
+Version: 2.0
 
-Status: Finalized for Development
+Status: Production (MVP Deployed)
 
 Project Owner: néné
 
 Author: John (PM Agent)
 
-1. Executive Summary
+## 1. Executive Summary
 
-ScribeLoop is a private web application designed for authors to collect and manage feedback on their manuscripts. It replaces fragmented feedback channels with a centralized, iterative platform where a trusted circle of readers can leave contextual annotations directly on the text. The system prioritizes minimalism, mobile-first reading, and lightweight server-side storage using SQLite.
+ScribeLoop is a private web application designed for authors to collect and manage feedback on their manuscripts. It replaces fragmented feedback channels with a centralized, iterative platform where a trusted circle of readers can leave contextual annotations directly on the text. The system prioritizes minimalism, mobile-first reading, and serverless cloud architecture using Firebase.
 
-2. Stakeholder Profiles
+**Production URL**: https://scribeloop.web.app
 
-Persona
+## 2. Stakeholder Profiles
 
-Role
+| Persona | Role | Key Needs |
+|---------|------|-----------|
+| The Author | Creator & Admin | Securely publish chapters, manage the "planned" vs "actual" structure, moderate nested discussions, and validate feedback to close iterations. |
+| The Reader | Trusted Circle | Frictionless access (Pseudo-only), intuitive annotation tools (Web/Mobile), and the ability to discuss suggestions with other readers. |
 
-Key Needs
+## 3. Functional Requirements
 
-The Author
+### 3.1. Project & Chapter Management
 
-Creator & Admin
+**Book Metadata**: Store and display the Book Title and the total number of planned chapters.
 
-Securely publish chapters, manage the "planned" vs "actual" structure, moderate nested discussions, and validate feedback to close iterations.
+**Chapter Workflow Statuses**:
+- **Planned (Prévus)**: Placeholder chapters not yet written or uploaded.
+- **Awaiting Feedback (En attente de feedback)**: Published chapters open for annotations and replies.
+- **Validated (Validés)**: Finalized version of the chapter; locked for interaction but available for reading history.
 
-The Reader
+### 3.2. Reader Interaction Model
 
-Trusted Circle
+**Identification**: No account creation. Users enter a "Pseudo" upon entry. The pseudo is saved in localStorage for attribution.
 
-Frictionless access (Pseudo-only), intuitive annotation tools (Web/Mobile), and the ability to discuss suggestions with other readers.
+**Contextual Annotation Engine**:
+- **Desktop**: Text Selection + Right-Click custom context menu to "Add Annotation."
+- **Mobile**: Text Selection + Long-Press (Appui long) to trigger the annotation menu.
 
-3. Functional Requirements
+**Collaborative Discussion**:
+- **Visibility**: Readers see all existing annotations (highlighted text segments).
+- **Threading**: Readers can reply to an existing annotation to comment on a critique or suggest an alternative.
 
-3.1. Project & Chapter Management
+### 3.3. Author Console
 
-Book Metadata: Store and display the Book Title and the total number of planned chapters.
+**Back-office**: A private area to upload/copy-paste chapter content (Markdown supported).
 
-Chapter Workflow Statuses:
+**Feedback Moderation**: A centralized view of all active threads. The author can respond as "Author" and toggle the status of a chapter to move the project forward.
 
-Planned (Prévus): Placeholder chapters not yet written or uploaded.
+## 4. Business Rules & Logic
 
-Awaiting Feedback (En attente de feedback): Published chapters open for annotations and replies.
+### 4.1. The "No Orphan" Integrity Rule
 
-Awaiting Validation (En attente de validation): Author has closed the feedback window and is reviewing/editing based on notes.
+**Constraint**: Once a chapter is moved to "Awaiting Feedback," the source text becomes immutable.
 
-Validated (Validés): Finalized version of the chapter; locked for interaction but available for reading history.
+**Reasoning**: To prevent "orphan" comments where the underlying text offsets change, breaking the link between a comment and its specific passage.
 
-3.2. Reader Interaction Model
-
-Identification: No account creation. Users enter a "Pseudo" upon entry. The pseudo is saved in the session/local storage for attribution.
-
-Contextual Annotation Engine:
-
-Desktop: Text Selection + Right-Click custom context menu to "Add Annotation."
-
-Mobile: Text Selection + Long-Press (Appui long) to trigger the annotation menu.
-
-Collaborative Discussion:
-
-Visibility: Readers see all existing annotations (highlighted text segments).
-
-Threading: Readers can reply to an existing annotation to comment on a critique or suggest an alternative.
-
-3.3. Author Console
-
-Back-office: A private area to upload/copy-paste chapter content (Markdown supported).
-
-Feedback Moderation: A centralized view of all active threads. The author can respond as "Author" and toggle the status of a chapter to move the project forward.
-
-4. Business Rules & Logic
-
-4.1. The "No Orphan" Integrity Rule
-
-Constraint: Once a chapter is moved to "Awaiting Feedback," the source text becomes immutable.
-
-Reasoning: To prevent "orphan" comments where the underlying text offsets change, breaking the link between a comment and its specific passage.
-
-Correction Loop: Changes to the text can only be saved as a new version after the author has marked the previous annotations as "Consulted."
-
-4.2. Public Feedback Loop
+### 4.2. Public Feedback Loop
 
 All readers see all comments. This fosters a "Beta Reader" community feel and allows the author to see if multiple people have the same issue with a specific paragraph.
 
-5. Technical Requirements
+## 5. Technical Requirements
 
-5.1. Database Strategy (SQLite)
+### 5.1. Database Strategy (Firebase Firestore)
 
-A server-side SQLite database will be the single source of truth.
+Cloud Firestore is the NoSQL database for all data storage.
 
-Table: metadata (Project settings: Title, Target Chapter Count).
+**Collections**:
+- `metadata`: Project settings (book_title, total_chapters)
+- `chapters`: id, title, content_md, status, sort_order, created_at
+- `annotations`: id, chapter_id, pseudo, quote, start_offset, end_offset, comment, parent_id, created_at
 
-Table: chapters (id, title, content_md, status, sort_order, created_at).
+### 5.2. Hosting
 
-Table: annotations (id, chapter_id, pseudo, selected_text, start_offset, end_offset, comment, parent_id (for replies), timestamp).
+Firebase Hosting serves the static frontend files globally via CDN.
 
-Table: logs (id, timestamp, pseudo, action) for basic access tracking.
+**Benefits**:
+- Zero cold start (no server to wake up)
+- Automatic HTTPS
+- Free tier (10 GB/month bandwidth)
 
-5.2. Interaction & UI
+### 5.3. Interaction & UI
 
-Selection API: Use the native browser Selection API to calculate character offsets for anchoring annotations.
+**Selection API**: Use the native browser Selection API to calculate character offsets for anchoring annotations.
 
-Mobile Overrides: Ensure the custom long-press menu does not conflict with native iOS/Android "Copy/Paste" menus where possible, or provides a clear "Annotate" action within the selection.
+**Mobile Overrides**: Ensure the custom long-press menu does not conflict with native iOS/Android "Copy/Paste" menus where possible.
 
-6. UX & UI Guidelines
+## 6. UX & UI Guidelines
 
-Typography: Priority on long-form reading comfort (Serif fonts, adjustable line height).
+**Typography**: Priority on long-form reading comfort (Serif fonts, adjustable line height).
 
-Visual Cues: Subtle text highlighting for annotated parts. Clicking a highlight opens a side-panel or overlay with the discussion thread.
+**Visual Cues**: Subtle text highlighting for annotated parts. Clicking a highlight opens a side-panel with the discussion thread.
 
-Minimalism: Zero distractions. No sidebars, headers, or footers while the reader is in "Reading Mode."
+**Minimalism**: Zero distractions. No sidebars, headers, or footers while the reader is in "Reading Mode."
 
-7. Success Metrics
+## 7. Success Metrics
 
-Engagement: High ratio of nested replies (indicates active discussion).
-
-Simplicity: Reader "Time-to-Comment" under 30 seconds from landing.
-
-Portability: The entire project state is contained within a single .sqlite file.
+- **Engagement**: High ratio of nested replies (indicates active discussion).
+- **Simplicity**: Reader "Time-to-Comment" under 30 seconds from landing.
+- **Cost**: $0/month for MVP usage (Firebase free tier).

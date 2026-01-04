@@ -51,78 +51,76 @@ function normalizeText(text) {
 export function applyHighlights(annotations, container, onHighlightClick) {
     if (!annotations || annotations.length === 0) return;
     
-    // Filter annotations that have valid offsets
+    // Filter valid identifiers
     const validAnnotations = annotations.filter(a => 
         a.start_offset != null && a.end_offset != null && !a.parent_id
     );
     
     if (validAnnotations.length === 0) return;
     
-    // Sort by start_offset (ascending)
+    // Sort by start_offset (descending) so we modify end of document first?
+    // Actually, with dynamic scanning, order matters less for correctness,
+    // but processing from back to front is generally safer for DOM stability.
     validAnnotations.sort((a, b) => a.start_offset - b.start_offset);
     
-    // Get text content and build a mapping
-    const walker = document.createTreeWalker(
-        container,
-        NodeFilter.SHOW_TEXT,
-        null,
-        false
-    );
-    
-    const textNodes = [];
-    let currentOffset = 0;
-    let node;
-    
-    while (node = walker.nextNode()) {
-        const text = normalizeText(node.textContent);
-        textNodes.push({
-            node,
-            start: currentOffset,
-            end: currentOffset + text.length,
-            text
-        });
-        currentOffset += text.length;
-    }
-    
-    // Apply highlights (from end to start to preserve offsets)
+    // Iterate backwards
     for (let i = validAnnotations.length - 1; i >= 0; i--) {
         const annotation = validAnnotations[i];
         const { start_offset, end_offset, id } = annotation;
         
-        // Find the text nodes that contain this range
-        for (let j = 0; j < textNodes.length; j++) {
-            const tn = textNodes[j];
+        // Collect nodes to highlight first (to avoid modifying DOM while walking)
+        const matches = [];
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+        let currentOffset = 0;
+        let node;
+        
+        while (node = walker.nextNode()) {
+            const text = normalizeText(node.textContent);
+            const nodeStart = currentOffset;
+            const nodeEnd = currentOffset + text.length;
             
-            // Check if this text node overlaps with annotation range
-            if (tn.end <= start_offset || tn.start >= end_offset) {
-                continue; // No overlap
+            currentOffset += text.length;
+            
+            // Check overlap
+            if (nodeEnd <= start_offset || nodeStart >= end_offset) {
+                continue;
             }
             
-            // Calculate local offsets within this text node
-            const localStart = Math.max(0, start_offset - tn.start);
-            const localEnd = Math.min(tn.text.length, end_offset - tn.start);
+            // Calculate local intersection
+            const localStart = Math.max(0, start_offset - nodeStart);
+            const localEnd = Math.min(text.length, end_offset - nodeStart);
             
-            if (localStart >= localEnd) continue;
+            if (localStart < localEnd) {
+                matches.push({
+                    node,
+                    localStart,
+                    localEnd,
+                    text: node.textContent // Use actual node content
+                });
+            }
+        }
+        
+        // Apply highlights to collected matches
+        for (const match of matches) {
+            const { node, localStart, localEnd, text } = match;
             
-            // Split the text node and wrap the selected part
-            const originalNode = tn.node;
-            const originalText = originalNode.textContent;
+            // Verify node is still attached (though collecting first minimizes this)
+            if (!node.parentNode) continue;
             
-            // Create the highlight element
+            const beforeText = text.substring(0, localStart);
+            const highlightText = text.substring(localStart, localEnd);
+            const afterText = text.substring(localEnd);
+            
             const mark = document.createElement('mark');
             mark.className = 'highlight';
             mark.dataset.annotationId = id;
-            mark.textContent = originalText.substring(localStart, localEnd);
+            mark.textContent = highlightText;
             
             // Add click handler
-            mark.addEventListener('click', () => {
+            mark.addEventListener('click', (e) => {
+                e.stopPropagation(); // Important for nested/overlapping
                 onHighlightClick?.(annotation);
             });
-            
-            // Replace the text node with the split parts
-            const parent = originalNode.parentNode;
-            const beforeText = originalText.substring(0, localStart);
-            const afterText = originalText.substring(localEnd);
             
             const frag = document.createDocumentFragment();
             if (beforeText) {
@@ -133,11 +131,7 @@ export function applyHighlights(annotations, container, onHighlightClick) {
                 frag.appendChild(document.createTextNode(afterText));
             }
             
-            parent.replaceChild(frag, originalNode);
-            
-            // Only process the first matching text node for simplicity
-            // (handles most single-node selections)
-            break;
+            node.parentNode.replaceChild(frag, node);
         }
     }
 }

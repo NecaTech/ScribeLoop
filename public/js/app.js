@@ -3,7 +3,7 @@
  * Router logic and view management
  */
 
-import { chapters, annotations, metadata } from './api.js';
+import { chapters, annotations, metadata, verifyAdmin } from './firebase-api.js';
 import { loadChapter, loadAnnotations } from './reader.js';
 import annotator, { applyHighlights } from './annotator.js';
 
@@ -292,7 +292,8 @@ function handleHighlightClick(annotation) {
     const thread = buildAnnotationThread(annotation.id);
     
     // Display quoted text
-    elements.selectedTextQuote.textContent = `"${annotation.selected_text || ''}"`;
+    const quoteText = annotation.quote || annotation.selected_text || '';
+    elements.selectedTextQuote.textContent = `\"${quoteText}\"`;
     
     // Render the thread
     renderAnnotationThread(thread, annotation);
@@ -301,7 +302,7 @@ function handleHighlightClick(annotation) {
     elements.commentInput.value = '';
     elements.annotationForm.dataset.startOffset = '';
     elements.annotationForm.dataset.endOffset = '';
-    elements.annotationForm.dataset.selectedText = '';
+    elements.annotationForm.dataset.selectedText = quoteText;
     elements.annotationForm.dataset.parentId = annotation.id;
     
     // Highlight the active annotation
@@ -315,11 +316,33 @@ function handleHighlightClick(annotation) {
  * Build thread from annotation ID (find all nested replies)
  */
 function buildAnnotationThread(annotationId) {
-    // Find the root annotation
+    // Find the root annotation object from the flat list.
     const root = currentAnnotations.find(a => a.id === annotationId);
     if (!root) return null;
+
+    // A recursive function to find and attach replies at any depth.
+    const buildReplies = (parentId) => {
+        // Find all direct children for the given parent.
+        const directReplies = currentAnnotations.filter(a => a.parent_id === parentId);
+        
+        // For each child, recurse to find their own children.
+        directReplies.forEach(reply => {
+            reply.replies = buildReplies(reply.id);
+        });
+        
+        // Sort the replies by date for consistent order.
+        directReplies.sort((a, b) => {
+            const dateA = a.created_at?.toDate ? a.created_at.toDate() : new Date(a.created_at);
+            const dateB = b.created_at?.toDate ? b.created_at.toDate() : new Date(b.created_at);
+            return dateA - dateB;
+        });
+
+        return directReplies;
+    }
+
+    // Start the process from the root annotation.
+    root.replies = buildReplies(annotationId);
     
-    // The annotation may have 'replies' array from API (nested structure)
     return root;
 }
 
@@ -339,7 +362,7 @@ function renderAnnotationThread(thread, rootAnnotation) {
                 <span class="comment-date">${formatDate(rootAnnotation.created_at)}</span>
             </div>
             <div class="comment-body">${escapeHtml(rootAnnotation.comment)}</div>
-            <button class="comment-reply-btn" onclick="window.replyToAnnotation(${rootAnnotation.id})">↩ Répondre</button>
+            <button class="comment-reply-btn" onclick="window.replyToAnnotation('${rootAnnotation.id}')">↩ Répondre</button>
         </div>
     `;
     
@@ -366,7 +389,7 @@ function renderReplies(replies, depth = 1) {
                     <span class="comment-date">${formatDate(reply.created_at)}</span>
                 </div>
                 <div class="comment-body">${escapeHtml(reply.comment)}</div>
-                <button class="comment-reply-btn" onclick="window.replyToAnnotation(${reply.id})">↩ Répondre</button>
+                <button class="comment-reply-btn" onclick="window.replyToAnnotation('${reply.id}')">↩ Répondre</button>
             </div>
         `;
         if (reply.replies && reply.replies.length > 0) {
@@ -386,8 +409,9 @@ window.replyToAnnotation = function(annotationId) {
     elements.annotationForm.dataset.endOffset = '';
     elements.annotationForm.dataset.selectedText = '';
     
-    // Focus the input
+    // Focus the input and scroll to it
     elements.commentInput.focus();
+    elements.commentInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
     elements.commentInput.placeholder = 'Votre réponse...';
     
     // Highlight the comment being replied to
@@ -400,8 +424,17 @@ window.replyToAnnotation = function(annotationId) {
  */
 function formatDate(dateStr) {
     if (!dateStr) return '';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+    
+    let date;
+    // Handle Firestore Timestamp (has toDate method)
+    if (typeof dateStr === 'object' && typeof dateStr.toDate === 'function') {
+        date = dateStr.toDate();
+    } else {
+        date = new Date(dateStr);
+    }
+    
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 /**
@@ -443,32 +476,51 @@ async function handleAnnotationSubmit(e) {
     
     const form = elements.annotationForm;
     const data = {
-        pseudo: currentPseudo,
+        pseudo: currentPseudo || 'Anonyme',
         comment,
         start_offset: parseInt(form.dataset.startOffset) || null,
         end_offset: parseInt(form.dataset.endOffset) || null,
-        selected_text: form.dataset.selectedText || null,
+        quote: form.dataset.selectedText || null,
     };
     
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const originalText = submitBtn.textContent;
+    
+    // Visual feedback
+    submitBtn.textContent = 'Envoi...';
+    submitBtn.disabled = true;
+
     try {
         if (form.dataset.parentId) {
             // Reply to existing annotation
             await annotations.reply(form.dataset.parentId, {
-                pseudo: currentPseudo,
+                pseudo: currentPseudo || 'Anonyme',
                 comment,
             });
         } else {
             // New annotation
             await annotations.create(currentChapterId, data);
         }
-        
+
+        // Success feedback
+        submitBtn.textContent = 'Envoyé !';
+        setTimeout(() => {
+            submitBtn.textContent = originalText;
+            submitBtn.disabled = false;
+        }, 1000);
+
         // Reload chapter and annotations
         await openChapter(currentChapterId);
         closeSidebar();
-        
+
     } catch (error) {
         console.error('Error submitting annotation:', error);
-        alert('Erreur lors de la soumission. Veuillez réessayer.');
+        submitBtn.textContent = 'Erreur !';
+        alert(`Erreur : ${error.message}`);
+        setTimeout(() => {
+            submitBtn.textContent = originalText;
+            submitBtn.disabled = false;
+        }, 2000);
     }
 }
 
@@ -553,6 +605,8 @@ function promptAdminLogin() {
             if (token) {
                 adminToken = token;
                 localStorage.setItem('scribeloop_admin_token', token);
+                // Assuming successful token validation implies admin status
+                currentPseudo = 'Admin'; // Ensure Admin has a pseudo for comments
                 modal.classList.add('hidden');
                 showView('admin');
                 loadAdmin();
@@ -611,8 +665,8 @@ function renderAdminChapterList(chapterList) {
                 <span class="chapter-status">${getStatusBadge(chapter.status)}</span>
             </div>
             <div class="chapter-actions">
-                <button class="btn-icon" onclick="window.editChapter(${chapter.id})" title="Modifier">✏️</button>
-                <button class="btn-icon btn-danger" onclick="window.deleteChapter(${chapter.id})" title="Supprimer">🗑️</button>
+                <button class="btn-icon" onclick="window.editChapter('${chapter.id}')" title="Modifier">✏️</button>
+                <button class="btn-icon btn-danger" onclick="window.deleteChapter('${chapter.id}')" title="Supprimer">🗑️</button>
             </div>
         </li>
     `).join('');
@@ -632,7 +686,14 @@ async function handleMetadataSubmit(e) {
         alert('✅ Paramètres sauvegardés!');
     } catch (error) {
         console.error('Error updating metadata:', error);
-        alert('❌ Erreur: ' + error.message);
+        if (error.message.includes('Unauthorized') || error.message.includes('Permission denied')) {
+            alert('🔒 Session expirée ou token invalide. Veuillez vous reconnecter.');
+            localStorage.removeItem('scribeloop_admin_token');
+            adminToken = '';
+            promptAdminLogin();
+        } else {
+            alert('❌ Erreur: ' + error.message);
+        }
     }
 }
 
@@ -665,7 +726,14 @@ async function handleChapterSubmit(e) {
         
     } catch (error) {
         console.error('Error saving chapter:', error);
-        alert('❌ Erreur: ' + error.message);
+        if (error.message.includes('Unauthorized') || error.message.includes('Permission denied')) {
+            alert('🔒 Session expirée ou token invalide. Veuillez vous reconnecter.');
+            localStorage.removeItem('scribeloop_admin_token');
+            adminToken = '';
+            promptAdminLogin();
+        } else {
+            alert('❌ Erreur: ' + error.message);
+        }
     }
 }
 
@@ -709,11 +777,21 @@ function cancelEdit() {
  * Delete a chapter
  */
 window.deleteChapter = async function(id) {
-    if (!confirm('Supprimer ce chapitre ? Cette action est irréversible.')) {
+    if (!confirm('Supprimer ce chapitre ? Toutes les annotations associées seront également supprimées. Cette action est irréversible.')) {
         return;
     }
     
-    // Note: Delete endpoint not implemented in backend yet
-    // For now, we'll just show an alert
-    alert('⚠️ La suppression n\'est pas encore implémentée.');
+    try {
+        await chapters.delete(id, adminToken);
+        alert('✅ Chapitre supprimé.');
+        loadAdmin(); // Reload the admin list
+    } catch (error) {
+        console.error('Error deleting chapter:', error);
+        if (error.message.includes('Unauthorized')) {
+            alert('🔒 Session expirée ou token invalide. Veuillez vous reconnecter.');
+            promptAdminLogin();
+        } else {
+            alert('❌ Erreur lors de la suppression: ' + error.message);
+        }
+    }
 };

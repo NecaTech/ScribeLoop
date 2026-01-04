@@ -3,7 +3,7 @@
  * Chapter rendering logic with markdown support
  */
 
-import { chapters, annotations } from './api.js';
+import { chapters, annotations } from './firebase-api.js';
 
 // We'll use a simple markdown renderer (server could also pre-render)
 // For now, basic parsing - markdown-it is loaded on backend
